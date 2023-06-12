@@ -36,17 +36,14 @@ class Cell:
             return self.canvas.cells[self.x % self.canvas.nx][(self.y - 1) % self.canvas.ny]
 
     def edge(self, direction):
-        try:
-            if direction == Edge.LEFT:
-                return self.canvas.edges[self.x][self.y][Edge.VERTICAL]
-            if direction == Edge.TOP:
-                return self.canvas.edges[self.x][(self.y+1) % (self.canvas.ny+1)][Edge.HORIZONTAL]
-            if direction == Edge.RIGHT:
-                return self.canvas.edges[(self.x+1) % (self.canvas.nx+1)][self.y][Edge.VERTICAL]
-            if direction == Edge.BOTTOM:
-                return self.canvas.edges[self.x][self.y][Edge.HORIZONTAL]
-        except:
-            return None
+        if direction == Edge.LEFT:
+            return self.canvas.edges[self.x][self.y][Edge.VERTICAL]
+        if direction == Edge.TOP:
+            return self.canvas.edges[self.x][(self.y+1) % (self.canvas.ny+1)][Edge.HORIZONTAL]
+        if direction == Edge.RIGHT:
+            return self.canvas.edges[(self.x+1) % (self.canvas.nx+1)][self.y][Edge.VERTICAL]
+        if direction == Edge.BOTTOM:
+            return self.canvas.edges[self.x][self.y][Edge.HORIZONTAL]
 
     def is_boundary(self):
         return (self.x == 0) or (self.x == self.canvas.nx - 1) or (self.y == 0) or (self.y == self.canvas.ny - 1)
@@ -83,7 +80,29 @@ class SimCell(Cell):
         super().__init__(canvas, x, y)
         self.s = 1.0
         self.p = 1.0
+        self.d = 0.0
+        self.dd = 0.0
     
+    @property
+    def divergence(self):
+        div = 0
+        for direction, sign in [(Edge.LEFT, 1), (Edge.TOP, -1), (Edge.RIGHT, -1), (Edge.BOTTOM, 1)]:
+            div += sign * self.edge(direction).v
+        return div
+
+    def diffuse(self, dt, property_grabber):
+        return dt * (sum([property_grabber(cell) for cell in self.neighbors]) - 4 * property_grabber(self))
+    
+    @property
+    def v(self):
+        return ((self.edge(Edge.LEFT).v + self.edge(Edge.RIGHT).v) / 2, (self.edge(Edge.TOP).v + self.edge(Edge.BOTTOM).v) / 2)
+
+    def advect(self, dt, property_grabber):
+        v = self.v
+        x = self.x + v[0] * dt
+        y = self.y + v[1] * dt
+        return (self.canvas.cells_weighted_average(x, y, property_grabber) - property_grabber(self))
+
 class SimEdge(Edge):
     def __init__(self, canvas, x, y, direction):
         super().__init__(canvas, x, y, direction)
@@ -97,20 +116,38 @@ class Canvas:
         self.cells = [[SimCell(self, x, y) for y in range(ny)] for x in range(nx)]
         self.edges = [[[SimEdge(self, x, y, direction) for direction in [Edge.VERTICAL, Edge.HORIZONTAL]] for y in range(ny+1)] for x in range(nx+1)]
 
+    def cells_weighted_average(self, x, y, property_grabber):
+        x0 = int(x)
+        x1 = x0 + 1
+        y0 = int(y)
+        y1 = y0 + 1
+        return (x1 - x) * (y1 - y)   * property_grabber(self.cells[x0 % self.nx][y0 % self.ny]) + \
+               (x1 - x) * (y  - y0)  * property_grabber(self.cells[x0 % self.nx][y1 % self.ny]) + \
+               (x  - x0) * (y1 - y)  * property_grabber(self.cells[x1 % self.nx][y0 % self.ny]) + \
+               (x  - x0) * (y  - y0) * property_grabber(self.cells[x1 % self.nx][y1 % self.ny])
+
 def fluid_simulation(dt, canvas):
 
-    for _ in range(niter):
-        for x in range(canvas.nx):
-            for y in range(canvas.ny):
-                for e in [Edge.LEFT, Edge.TOP, Edge.RIGHT, Edge.BOTTOM]:
-                    canvas.cells[x][y].edge(e).dv += (canvas.cells[x][y].p - canvas.cells[x][y].neighbor_in(canvas.cells[x][y].edge(e).direction).p) / (2 * niter * 20)
+    # Diffusion
+    for x in range(nx):
+        for y in range(ny):
+            canvas.cells[x][y].dd += 0.2 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.d)
+    
+    for x in range(nx):
+        for y in range(ny):
+            canvas.cells[x][y].d += canvas.cells[x][y].dd
+            canvas.cells[x][y].dd = 0.0
 
-    for x in range(canvas.nx):
-        for y in range(canvas.ny):
-                for e in [Edge.VERTICAL, Edge.HORIZONTAL]:
-                    canvas.cells[x][y].p -= canvas.edges[x][y][e].dv * 0.2
-                    canvas.edges[x][y][e].v += canvas.edges[x][y][e].dv
-                    canvas.edges[x][y][e].dv = 0
+    # Advection
+    for x in range(nx):
+        for y in range(ny):
+            canvas.cells[x][y].dd += canvas.cells[x][y].advect(dt, lambda cell: cell.d)
+
+    for x in range(nx):
+        for y in range(ny):
+            canvas.cells[x][y].d += canvas.cells[x][y].dd
+            canvas.cells[x][y].dd = 0.0
+
 
     return canvas
 
@@ -118,22 +155,30 @@ t_last = time.time()
 def renderer():
     global t_last
     cnv = Canvas(nx, ny)
-    
-    cnv.cells[4][4].p = 2.0
+
+    for x in range(nx):
+        for y in range(ny):
+            cnv.cells[x][y].edge(Edge.BOTTOM).v = 1.5
+            cnv.cells[x][y].edge(Edge.LEFT).v = 1.2
+            if y == 0: cnv.cells[x][y].d = 250.0
     
     while True:
-
-        dt = time.time() - t_last
-        t_last = time.time()
-        cnv = fluid_simulation(dt, cnv)
-        data = np.zeros((nx, ny, 3))
-
+        # calculating time step
         t = time.time()
+        dt = t - t_last
+        t_last = t
+
+        # running the simulation
+        cnv = fluid_simulation(dt, cnv)
+    
+        # converting canvas to an image
+        data = np.zeros((nx, ny, 3))
         for x in range(nx):
             for y in range(ny):
-                data[-y-1, x, :] = cnv.cells[x][y].p
-        
-        data = np.divide(data, max(np.amax(data), 0.1))
-        data = np.multiply(data, 255)
+                data[-y-1, x, :] = cnv.cells[x][y].d
+            
+        print(sum(data.flatten()) / 3)
+        #data = np.divide(data, max(np.amax(data), 0.1))
+        #data = np.multiply(data, 255)
         
         yield Image.fromarray(data.astype('uint8'), 'RGB')

@@ -7,5 +7,5 @@ function render() {
             var outside = URL.createObjectURL(images);
             img.src = outside;
         });
-    setTimeout(render, 1000);
+    setTimeout(render, 100);
 }
