@@ -5,9 +5,9 @@ from math import sin, sqrt
 from functools import reduce
 import sys
 
-nx = 50
-ny = 50
-niter = 10
+nx = 10
+ny = 10
+niter = 1
 
 class Cell:
     def __init__(self, canvas, x, y):
@@ -83,17 +83,6 @@ class SimCell(Cell):
         super().__init__(canvas, x, y)
         self.s = 1.0
         self.p = 1.0
-        self.dp = 1.0
-    
-    @property
-    def divergence(self):
-        '''
-        ret = 0
-        for e, si in [(Edge.LEFT, 1), (Edge.TOP, -1), (Edge.RIGHT, -1), (Edge.BOTTOM, 1)]:
-            ret += si * self.edge(e).v
-        return ret
-        '''
-        return sum([self.edge(e).v for e in [Edge.LEFT, Edge.TOP, Edge.RIGHT, Edge.BOTTOM]])
     
 class SimEdge(Edge):
     def __init__(self, canvas, x, y, direction):
@@ -110,47 +99,18 @@ class Canvas:
 
 def fluid_simulation(dt, canvas):
 
-    for x in range(canvas.nx):
-        for y in range(canvas.ny):
-            canvas.cells[x][y].p = 0
-            for e in [Edge.LEFT, Edge.TOP, Edge.RIGHT, Edge.BOTTOM]:
-                canvas.cells[x][y].edge(e).dv = 0
-
-    for iteration in range(niter):
+    for _ in range(niter):
         for x in range(canvas.nx):
             for y in range(canvas.ny):
-                for e in [Edge.VERTICAL, Edge.HORIZONTAL]:
-                    canvas.edges[x][y][e].dv -= sum([cell.divergence for cell in canvas.edges[x][y][e].cells]) / (2 * niter)
-                
+                for e in [Edge.LEFT, Edge.TOP, Edge.RIGHT, Edge.BOTTOM]:
+                    canvas.cells[x][y].edge(e).dv += (canvas.cells[x][y].p - canvas.cells[x][y].neighbor_in(canvas.cells[x][y].edge(e).direction).p) / (2 * niter * 20)
+
     for x in range(canvas.nx):
         for y in range(canvas.ny):
-            for e in [Edge.VERTICAL, Edge.HORIZONTAL]:
-                edge = canvas.edges[x][y][e]
-                edge.v += edge.dv
-                edge.dv = 0
-            canvas.cells[x][y].p = sqrt(canvas.cells[x][y].edge(Edge.LEFT).v**2 + canvas.cells[x][y].edge(Edge.BOTTOM).v**2)
-
-
-    '''
-                if canvas.cells[x][y].is_boundary():
-                    canvas.cells[x][y].s = 0
-
-                divergence = canvas.cells[x][y].divergence
-                s = sum([n.s for n in canvas.cells[x][y].neighbors])
-
-                if s == 0: continue
-
-                canvas.cells[x][y].edge(Edge.LEFT).dv   -= 0.5 * overrelaxation * divergence * canvas.cells[x][y].neighbor_in(Edge.LEFT).s / s
-                canvas.cells[x][y].edge(Edge.TOP).dv    += 0.5 * overrelaxation * divergence * canvas.cells[x][y].neighbor_in(Edge.TOP).s / s
-                canvas.cells[x][y].edge(Edge.RIGHT).dv  += 0.5 * overrelaxation * divergence * canvas.cells[x][y].neighbor_in(Edge.RIGHT).s / s
-                canvas.cells[x][y].edge(Edge.BOTTOM).dv -= 0.5 * overrelaxation * divergence * canvas.cells[x][y].neighbor_in(Edge.BOTTOM).s / s
-                canvas.cells[x][y].p += divergence / niter
-        
-            for e in [Edge.LEFT, Edge.BOTTOM]:
-                canvas.cells[x][y].edge(e).v += canvas.cells[x][y].edge(e).dv / niter
-                canvas.cells[x][y].edge(e).dv = 0
-    '''
-        
+                for e in [Edge.VERTICAL, Edge.HORIZONTAL]:
+                    canvas.cells[x][y].p -= canvas.edges[x][y][e].dv * 0.2
+                    canvas.edges[x][y][e].v += canvas.edges[x][y][e].dv
+                    canvas.edges[x][y][e].dv = 0
 
     return canvas
 
@@ -159,8 +119,7 @@ def renderer():
     global t_last
     cnv = Canvas(nx, ny)
     
-    cnv.cells[20][20].edge(Edge.BOTTOM).v = 0.1
-    cnv.cells[20][20].edge(Edge.LEFT).v = 0.4
+    cnv.cells[4][4].p = 2.0
     
     while True:
 
@@ -174,9 +133,7 @@ def renderer():
             for y in range(ny):
                 data[-y-1, x, :] = cnv.cells[x][y].p
         
-        m = np.amax(data)
-        #print(m, file=sys.stdout)
-        #data = np.divide(data, max(np.amax(data), 0.1))
+        data = np.divide(data, max(np.amax(data), 0.1))
         data = np.multiply(data, 255)
         
         yield Image.fromarray(data.astype('uint8'), 'RGB')
