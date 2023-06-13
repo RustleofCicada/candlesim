@@ -1,12 +1,13 @@
 import time
 import numpy as np
 from PIL import Image
-from math import sin, sqrt
+from math import sin, cos, sqrt
 from functools import reduce
 import sys
+from random import random
 
-nx = 10
-ny = 10
+nx = 60
+ny = 350
 niter = 1
 
 class Cell:
@@ -82,6 +83,8 @@ class SimCell(Cell):
         self.p = 1.0
         self.d = 0.0
         self.dd = 0.0
+        self.T = 10.0
+        self.dT = 0.0
     
     @property
     def divergence(self):
@@ -128,25 +131,54 @@ class Canvas:
 
 def fluid_simulation(dt, canvas):
 
+    # Turbulence
+    for x in range(nx):
+        for y in range(ny):
+            if canvas.cells[x][y].T >= 100:
+                canvas.cells[x][y].edge(Edge.BOTTOM).v += (random()-0.5)* 0.1 * dt
+                canvas.cells[x][y].edge(Edge.LEFT).v += (random()-0.5) * 0.4 * dt
+
+    # Gravity / bouyancy
+    for x in range(nx):
+        for y in range(ny):
+            if canvas.cells[x][y].T > 15:
+                canvas.cells[x][y].edge(Edge.BOTTOM).v -= dt * 0.4 * canvas.cells[x][y].T * canvas.cells[x][y].d
+
     # Diffusion
     for x in range(nx):
         for y in range(ny):
-            canvas.cells[x][y].dd += 0.2 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.d)
+            # vapor
+            if canvas.cells[x][y].T >= 15:
+                canvas.cells[x][y].dd += 0.2 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.d)
+            # combustion and evaporation
+            if canvas.cells[x][y].T >= 80 and canvas.cells[x][y].d > 0:
+                canvas.cells[x][y].dT += 230.0 * canvas.cells[x][y].d * 10 * dt
+                canvas.cells[x][y].dd -= 6000.0 * canvas.cells[x][y].dT * dt
+            # heat diffusion
+            canvas.cells[x][y].dT += 0.1 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.T)
+            
+
+    for x in range(nx):
+        for y in range(ny):
+            canvas.cells[x][y].d += canvas.cells[x][y].dd
+            if canvas.cells[x][y].d < 0:
+                canvas.cells[x][y].d = 0
+            canvas.cells[x][y].dd = 0.0
+            canvas.cells[x][y].T += canvas.cells[x][y].dT
+            canvas.cells[x][y].dT = 0.0
+
+    # Advection
+    for x in range(nx):
+        for y in range(ny):
+            canvas.cells[x][y].dd += 0.2 * canvas.cells[x][y].advect(dt, lambda cell: cell.d)
+            #canvas.cells[x][y].dT -= 0.02 *  canvas.cells[x][y].advect(dt, lambda cell: cell.d) * canvas.cells[x][y].advect(dt, lambda cell: cell.T)
     
     for x in range(nx):
         for y in range(ny):
             canvas.cells[x][y].d += canvas.cells[x][y].dd
             canvas.cells[x][y].dd = 0.0
-
-    # Advection
-    for x in range(nx):
-        for y in range(ny):
-            canvas.cells[x][y].dd += canvas.cells[x][y].advect(dt, lambda cell: cell.d)
-
-    for x in range(nx):
-        for y in range(ny):
-            canvas.cells[x][y].d += canvas.cells[x][y].dd
-            canvas.cells[x][y].dd = 0.0
+            canvas.cells[x][y].T += canvas.cells[x][y].dT
+            canvas.cells[x][y].dT = 0.0
 
 
     return canvas
@@ -156,29 +188,39 @@ def renderer():
     global t_last
     cnv = Canvas(nx, ny)
 
-    for x in range(nx):
-        for y in range(ny):
-            cnv.cells[x][y].edge(Edge.BOTTOM).v = 1.5
-            cnv.cells[x][y].edge(Edge.LEFT).v = 1.2
-            if y == 0: cnv.cells[x][y].d = 250.0
-    
+    # candle
+    for x in range(int(0.35*nx), int(0.65*nx)):
+        for y in range(int(0.8*ny)):
+            cnv.cells[x][y].d = 1.0
+
+    # ignition source
+    for x in range(int(nx/2)-2, int(nx/2)+2):
+        for y in range(int(0.8*ny),int(0.82*ny)):
+            cnv.cells[x][y].T = 160
+
     while True:
         # calculating time step
         t = time.time()
         dt = t - t_last
         t_last = t
 
+        # walls
+        for y in range(ny):
+            cnv.cells[0][y].T = 0
+            cnv.cells[nx-1][y].T = 0
+
         # running the simulation
         cnv = fluid_simulation(dt, cnv)
     
         # converting canvas to an image
-        data = np.zeros((nx, ny, 3))
+        data = np.zeros((ny, nx, 3))
         for x in range(nx):
             for y in range(ny):
-                data[-y-1, x, :] = cnv.cells[x][y].d
+                data[-y-1, x, 2] = min(max(cnv.cells[x][y].d * (cnv.cells[x][y].T/50), 0.0), 1)
+                data[-y-1, x, 1] = min(max(cnv.cells[x][y].d, 0.0), 1)
+                data[-y-1, x, 0] = min(max(cnv.cells[x][y].T / 100, 0.0), 1)
             
-        print(sum(data.flatten()) / 3)
         #data = np.divide(data, max(np.amax(data), 0.1))
-        #data = np.multiply(data, 255)
+        data = np.multiply(data, 255)
         
         yield Image.fromarray(data.astype('uint8'), 'RGB')
