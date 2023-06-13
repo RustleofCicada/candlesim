@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  python:
+    image: python:3.11-slim
+    volumes:
+      - ./requirements.txt:/conf/requirements.txt
+      - ./src:/project
+    ports: 
+      - 5000:5000
+    working_dir: /project
+    command: sh -c "python -m pip install -r /conf/requirements.txt && python /project/app.py"
+

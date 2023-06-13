@@ -1,0 +1,16 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #101010;
+}
+
+#bitmap {
+    display: block;
+    height: 600px;
+    image-rendering: pixelated;
+    margin: 0 auto;
+    border: 10px solid #f0f0f0;
+}
