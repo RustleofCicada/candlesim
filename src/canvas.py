@@ -142,7 +142,7 @@ def fluid_simulation(dt, canvas):
     for x in range(nx):
         for y in range(ny):
             if canvas.cells[x][y].T > 15:
-                canvas.cells[x][y].edge(Edge.BOTTOM).v -= dt * 0.4 * canvas.cells[x][y].T * canvas.cells[x][y].d
+                canvas.cells[x][y].edge(Edge.BOTTOM).v -= dt * 1.4 * canvas.cells[x][y].T * canvas.cells[x][y].d
 
     # Diffusion
     for x in range(nx):
@@ -155,7 +155,7 @@ def fluid_simulation(dt, canvas):
                 canvas.cells[x][y].dT += 230.0 * canvas.cells[x][y].d * 10 * dt
                 canvas.cells[x][y].dd -= 6000.0 * canvas.cells[x][y].dT * dt
             # heat diffusion
-            canvas.cells[x][y].dT += 0.1 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.T)
+            canvas.cells[x][y].dT += 0.3 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.T)
             
 
     for x in range(nx):
