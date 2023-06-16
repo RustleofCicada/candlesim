@@ -7,7 +7,7 @@ import sys
 from random import random
 
 nx = 60
-ny = 350
+ny = 150
 niter = 1
 
 class Cell:
@@ -18,33 +18,33 @@ class Cell:
 
     @property
     def neighbors(self):
-        return [self.canvas.cells[(self.x + dx) % self.canvas.nx][(self.y + dy) % self.canvas.ny]
+        return [self.canvas._cells[(self.x + dx) % self.canvas.nx][(self.y + dy) % self.canvas.ny]
                 for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]]
     
     @property
     def edges(self):
-        return [self.canvas.edges[(self.x+dx) % self.canvas.nx+1][(self.y+dy) % self.canvas.ny+1][direction]
+        return [self.canvas._edges[(self.x+dx) % self.canvas.nx+1][(self.y+dy) % self.canvas.ny+1][direction]
                 for dx, dy, direction in [(0, 0, Edge.VERTICAL), (1, 0, Edge.HORIZONTAL), (0, 1, Edge.VERTICAL), (0, 0, Edge.HORIZONTAL)]]
     
     def neighbor_in(self, direction):
         if direction == Edge.LEFT:
-            return self.canvas.cells[(self.x - 1) % self.canvas.nx][self.y]
+            return self.canvas._cells[(self.x - 1) % self.canvas.nx][self.y]
         if direction == Edge.TOP:
-            return self.canvas.cells[self.x % self.canvas.nx][(self.y + 1) % self.canvas.ny]
+            return self.canvas._cells[self.x % self.canvas.nx][(self.y + 1) % self.canvas.ny]
         if direction == Edge.RIGHT:
-            return self.canvas.cells[(self.x + 1) % self.canvas.nx][self.y]
+            return self.canvas._cells[(self.x + 1) % self.canvas.nx][self.y]
         if direction == Edge.BOTTOM:
-            return self.canvas.cells[self.x % self.canvas.nx][(self.y - 1) % self.canvas.ny]
+            return self.canvas._cells[self.x % self.canvas.nx][(self.y - 1) % self.canvas.ny]
 
     def edge(self, direction):
         if direction == Edge.LEFT:
-            return self.canvas.edges[self.x][self.y][Edge.VERTICAL]
+            return self.canvas._edges[self.x][self.y][Edge.VERTICAL]
         if direction == Edge.TOP:
-            return self.canvas.edges[self.x][(self.y+1) % (self.canvas.ny+1)][Edge.HORIZONTAL]
+            return self.canvas._edges[self.x][(self.y+1) % (self.canvas.ny+1)][Edge.HORIZONTAL]
         if direction == Edge.RIGHT:
-            return self.canvas.edges[(self.x+1) % (self.canvas.nx+1)][self.y][Edge.VERTICAL]
+            return self.canvas._edges[(self.x+1) % (self.canvas.nx+1)][self.y][Edge.VERTICAL]
         if direction == Edge.BOTTOM:
-            return self.canvas.edges[self.x][self.y][Edge.HORIZONTAL]
+            return self.canvas._edges[self.x][self.y][Edge.HORIZONTAL]
 
     def is_boundary(self):
         return (self.x == 0) or (self.x == self.canvas.nx - 1) or (self.y == 0) or (self.y == self.canvas.ny - 1)
@@ -66,9 +66,9 @@ class Edge:
     @property
     def cells(self):
         if self.is_boundary():
-            return [self.canvas.cells[self.x][self.y]]
+            return [self.canvas._cells[self.x][self.y]]
         
-        return [self.canvas.cells[self.x][self.y], self.canvas.cells[self.x][self.y].neighbor_in(self.direction)]
+        return [self.canvas._cells[self.x][self.y], self.canvas._cells[self.x][self.y].neighbor_in(self.direction)]
 
     def is_boundary(self):
         if self.direction == Edge.VERTICAL:
@@ -79,19 +79,17 @@ class Edge:
 class SimCell(Cell):
     def __init__(self, canvas, x, y):
         super().__init__(canvas, x, y)
-        self.s = 1.0
+        self.T = 0.0
         self.p = 1.0
-        self.d = 0.0
-        self.dd = 0.0
-        self.T = 10.0
-        self.dT = 0.0
-    
+
+    '''
     @property
     def divergence(self):
         div = 0
         for direction, sign in [(Edge.LEFT, 1), (Edge.TOP, -1), (Edge.RIGHT, -1), (Edge.BOTTOM, 1)]:
             div += sign * self.edge(direction).v
         return div
+    '''
 
     def diffuse(self, dt, property_grabber):
         return dt * (sum([property_grabber(cell) for cell in self.neighbors]) - 4 * property_grabber(self))
@@ -116,70 +114,77 @@ class Canvas:
     def __init__(self, nx, ny):
         self.nx = nx
         self.ny = ny
-        self.cells = [[SimCell(self, x, y) for y in range(ny)] for x in range(nx)]
-        self.edges = [[[SimEdge(self, x, y, direction) for direction in [Edge.VERTICAL, Edge.HORIZONTAL]] for y in range(ny+1)] for x in range(nx+1)]
+        self._cells = [[SimCell(self, x, y) for y in range(ny)] for x in range(nx)]
+        self._edges = [[[SimEdge(self, x, y, direction) for direction in [Edge.VERTICAL, Edge.HORIZONTAL]] for y in range(ny+1)] for x in range(nx+1)]
 
     def cells_weighted_average(self, x, y, property_grabber):
         x0 = int(x)
         x1 = x0 + 1
         y0 = int(y)
         y1 = y0 + 1
-        return (x1 - x) * (y1 - y)   * property_grabber(self.cells[x0 % self.nx][y0 % self.ny]) + \
-               (x1 - x) * (y  - y0)  * property_grabber(self.cells[x0 % self.nx][y1 % self.ny]) + \
-               (x  - x0) * (y1 - y)  * property_grabber(self.cells[x1 % self.nx][y0 % self.ny]) + \
-               (x  - x0) * (y  - y0) * property_grabber(self.cells[x1 % self.nx][y1 % self.ny])
+        return (x1 - x) * (y1 - y)   * property_grabber(self._cells[x0 % self.nx][y0 % self.ny]) + \
+               (x1 - x) * (y  - y0)  * property_grabber(self._cells[x0 % self.nx][y1 % self.ny]) + \
+               (x  - x0) * (y1 - y)  * property_grabber(self._cells[x1 % self.nx][y0 % self.ny]) + \
+               (x  - x0) * (y  - y0) * property_grabber(self._cells[x1 % self.nx][y1 % self.ny])
+    
+    @property
+    def cells(self):
+        for x in range(self.nx):
+            for y in range(self.ny):
+                yield self._cells[x][y]
+
+    def apply_to_each_cell(self, func):
+        for x in range(self.nx):
+            for y in range(self.ny):
+                self._cells[x][y] = func(self._cells[x][y])
 
 def fluid_simulation(dt, canvas):
 
-    # Turbulence
-    for x in range(nx):
-        for y in range(ny):
-            if canvas.cells[x][y].T >= 100:
-                canvas.cells[x][y].edge(Edge.BOTTOM).v += (random()-0.5)* 0.1 * dt
-                canvas.cells[x][y].edge(Edge.LEFT).v += (random()-0.5) * 0.4 * dt
-
-    # Gravity / bouyancy
-    for x in range(nx):
-        for y in range(ny):
-            if canvas.cells[x][y].T > 15:
-                canvas.cells[x][y].edge(Edge.BOTTOM).v -= dt * 1.4 * canvas.cells[x][y].T * canvas.cells[x][y].d
-
-    # Diffusion
-    for x in range(nx):
-        for y in range(ny):
-            # vapor
-            if canvas.cells[x][y].T >= 15:
-                canvas.cells[x][y].dd += 0.2 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.d)
-            # combustion and evaporation
-            if canvas.cells[x][y].T >= 80 and canvas.cells[x][y].d > 0:
-                canvas.cells[x][y].dT += 230.0 * canvas.cells[x][y].d * 10 * dt
-                canvas.cells[x][y].dd -= 6000.0 * canvas.cells[x][y].dT * dt
-            # heat diffusion
-            canvas.cells[x][y].dT += 0.3 * canvas.cells[x][y].diffuse(dt, lambda cell: cell.T)
-            
-
-    for x in range(nx):
-        for y in range(ny):
-            canvas.cells[x][y].d += canvas.cells[x][y].dd
-            if canvas.cells[x][y].d < 0:
-                canvas.cells[x][y].d = 0
-            canvas.cells[x][y].dd = 0.0
-            canvas.cells[x][y].T += canvas.cells[x][y].dT
-            canvas.cells[x][y].dT = 0.0
-
-    # Advection
-    for x in range(nx):
-        for y in range(ny):
-            canvas.cells[x][y].dd += 0.2 * canvas.cells[x][y].advect(dt, lambda cell: cell.d)
-            #canvas.cells[x][y].dT -= 0.02 *  canvas.cells[x][y].advect(dt, lambda cell: cell.d) * canvas.cells[x][y].advect(dt, lambda cell: cell.T)
+    '''
+    def turbulence(cell):
+        if cell.T >= 100:
+            cell.edge(Edge.BOTTOM).v += (random()-0.5) * 0.1 * dt
+            cell.edge(Edge.LEFT).v += (random()-0.5) * 0.4 * dt
+        return cell
+    '''
     
-    for x in range(nx):
-        for y in range(ny):
-            canvas.cells[x][y].d += canvas.cells[x][y].dd
-            canvas.cells[x][y].dd = 0.0
-            canvas.cells[x][y].T += canvas.cells[x][y].dT
-            canvas.cells[x][y].dT = 0.0
+    def gravity(cell):
+        if cell.T > 50:
+            cell.edge(Edge.BOTTOM).v -= dt * 2.1 * cell.T * cell.d
+        return cell
 
+    def diffusion(cell):
+        # vapor
+        if cell.T >= 15:
+            cell.dd += 0.2 * cell.diffuse(dt, lambda _cell: _cell.d)
+        # combustion and evaporation
+        if cell.T >= 80 and cell.d > 0:
+            cell.dT += 230.0 * cell.d * 10 * dt
+            cell.dd -= 600.0 * cell.dT * dt
+        # heat diffusion
+        cell.dT += 0.8 * cell.diffuse(dt, lambda _cell: _cell.heat_conduction * _cell.T)
+        return cell
+
+    def apply_iteration(cell):
+        cell.d += cell.dd
+        cell.dd = 0
+        if cell.d < 0:
+            cell.d = 0
+        cell.T += cell.dT
+        cell.dT = 0
+        return cell
+
+    def advection(cell):
+        cell.dd += 0.2 * cell.advect(dt, lambda _cell: _cell.d)
+        #cell.dT -= 0.02 * CELL.advect(dt, lambda _cell: _cell.d) * cell.advect(dt, lambda _cell: _cell.T)
+        return cell
+
+    #canvas.apply_to_each_cell(turbulence)
+    canvas.apply_to_each_cell(gravity)
+    canvas.apply_to_each_cell(diffusion)
+    canvas.apply_to_each_cell(apply_iteration)
+    canvas.apply_to_each_cell(advection)
+    canvas.apply_to_each_cell(apply_iteration)
 
     return canvas
 
@@ -191,12 +196,13 @@ def renderer():
     # candle
     for x in range(int(0.35*nx), int(0.65*nx)):
         for y in range(int(0.8*ny)):
-            cnv.cells[x][y].d = 1.0
+            cnv._cells[x][y].d = 1.0
+            cnv._cells[x][y].material = 1
 
     # ignition source
     for x in range(int(nx/2)-2, int(nx/2)+2):
         for y in range(int(0.8*ny),int(0.82*ny)):
-            cnv.cells[x][y].T = 160
+            cnv._cells[x][y].T = 160
 
     while True:
         # calculating time step
@@ -206,8 +212,8 @@ def renderer():
 
         # walls
         for y in range(ny):
-            cnv.cells[0][y].T = 0
-            cnv.cells[nx-1][y].T = 0
+            cnv._cells[0][y].T = 0
+            cnv._cells[nx-1][y].T = 0
 
         # running the simulation
         cnv = fluid_simulation(dt, cnv)
@@ -216,9 +222,9 @@ def renderer():
         data = np.zeros((ny, nx, 3))
         for x in range(nx):
             for y in range(ny):
-                data[-y-1, x, 2] = min(max(cnv.cells[x][y].d * (cnv.cells[x][y].T/50), 0.0), 1)
-                data[-y-1, x, 1] = min(max(cnv.cells[x][y].d, 0.0), 1)
-                data[-y-1, x, 0] = min(max(cnv.cells[x][y].T / 100, 0.0), 1)
+                data[-y-1, x, 2] = min(max(cnv._cells[x][y].d * (cnv._cells[x][y].T/50), 0.0), 1)
+                data[-y-1, x, 1] = min(max(cnv._cells[x][y].d, 0.0), 1)
+                data[-y-1, x, 0] = min(max(cnv._cells[x][y].T / 100, 0.0), 1)
             
         #data = np.divide(data, max(np.amax(data), 0.1))
         data = np.multiply(data, 255)
