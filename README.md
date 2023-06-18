@@ -12,7 +12,7 @@ Go to http://localhost:5000/
 - green - solid candle (low temperature)
 - blue - flame (high temperature)
 - red - temperature\
-![](./candle.png)
+![](./docs/1.png)
 
 ### Authors:
 - Damian Legutko

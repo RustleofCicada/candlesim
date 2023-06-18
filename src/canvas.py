@@ -6,9 +6,9 @@ from functools import reduce
 import sys
 from random import random
 
-nx = 60
-ny = 150
-niter = 1
+nx = 51
+ny = 100
+niter = 4
 
 class Cell:
     def __init__(self, canvas, x, y):
@@ -79,8 +79,10 @@ class Edge:
 class SimCell(Cell):
     def __init__(self, canvas, x, y):
         super().__init__(canvas, x, y)
-        self.T = 0.0
-        self.p = 1.0
+        self.T = 20.0
+        self.dT = 0.0
+        self.d = 0.0
+        self.dd = 0.0
 
     '''
     @property
@@ -140,51 +142,56 @@ class Canvas:
 
 def fluid_simulation(dt, canvas):
 
-    '''
-    def turbulence(cell):
-        if cell.T >= 100:
-            cell.edge(Edge.BOTTOM).v += (random()-0.5) * 0.1 * dt
-            cell.edge(Edge.LEFT).v += (random()-0.5) * 0.4 * dt
-        return cell
-    '''
-    
-    def gravity(cell):
-        if cell.T > 50:
-            cell.edge(Edge.BOTTOM).v -= dt * 2.1 * cell.T * cell.d
-        return cell
+    dt /= niter
+    for _ in range(niter):
+        
+        def turbulence(cell):
+            if cell.T >= 60:
+                cell.edge(Edge.BOTTOM).v += (random()-0.5) * 0.05 * dt
+                cell.edge(Edge.LEFT).v += (random()-0.5) * 0.1 * dt
+            return cell
+        
+        def gravity(cell):
+            if cell.T > 60:
+                cell.edge(Edge.BOTTOM).v -= dt * 0.2 * cell.T
+            return cell
 
-    def diffusion(cell):
-        # vapor
-        if cell.T >= 15:
-            cell.dd += 0.2 * cell.diffuse(dt, lambda _cell: _cell.d)
-        # combustion and evaporation
-        if cell.T >= 80 and cell.d > 0:
-            cell.dT += 230.0 * cell.d * 10 * dt
-            cell.dd -= 600.0 * cell.dT * dt
-        # heat diffusion
-        cell.dT += 0.8 * cell.diffuse(dt, lambda _cell: _cell.heat_conduction * _cell.T)
-        return cell
+        def diffusion(cell):
+            # vapor
+            if cell.T >= 30:
+                cell.dd += 0.96 * cell.diffuse(dt, lambda _cell: _cell.d)
+            # heat diffusion
+            cell.dT += 1.4 * cell.diffuse(dt, lambda _cell: _cell.T)
+            return cell
 
-    def apply_iteration(cell):
-        cell.d += cell.dd
-        cell.dd = 0
-        if cell.d < 0:
-            cell.d = 0
-        cell.T += cell.dT
-        cell.dT = 0
-        return cell
+        def combustion(cell):
+            # combustion and evaporation
+            if cell.T >= 100 and cell.d > 0:
+                cell.dT += 4000.0 * cell.d * dt
+                cell.dd -= 16000.0 * cell.dT * dt
+            return cell
 
-    def advection(cell):
-        cell.dd += 0.2 * cell.advect(dt, lambda _cell: _cell.d)
-        #cell.dT -= 0.02 * CELL.advect(dt, lambda _cell: _cell.d) * cell.advect(dt, lambda _cell: _cell.T)
-        return cell
+        def apply_iteration(cell):
+            cell.d += cell.dd
+            cell.dd = 0
+            if cell.d < 0:
+                cell.d = 0
+            cell.T += cell.dT
+            cell.dT = 0
+            return cell
 
-    #canvas.apply_to_each_cell(turbulence)
-    canvas.apply_to_each_cell(gravity)
-    canvas.apply_to_each_cell(diffusion)
-    canvas.apply_to_each_cell(apply_iteration)
-    canvas.apply_to_each_cell(advection)
-    canvas.apply_to_each_cell(apply_iteration)
+        def advection(cell):
+            cell.dd += cell.advect(dt, lambda _cell: 0.1 * _cell.d)
+            cell.dT += cell.advect(dt, lambda _cell: 0.1 * _cell.T) 
+            return cell
+
+        canvas.apply_to_each_cell(turbulence)
+        canvas.apply_to_each_cell(gravity)
+        canvas.apply_to_each_cell(combustion)
+        canvas.apply_to_each_cell(diffusion)
+        canvas.apply_to_each_cell(apply_iteration)
+        canvas.apply_to_each_cell(advection)
+        canvas.apply_to_each_cell(apply_iteration)
 
     return canvas
 
@@ -194,15 +201,15 @@ def renderer():
     cnv = Canvas(nx, ny)
 
     # candle
-    for x in range(int(0.35*nx), int(0.65*nx)):
-        for y in range(int(0.8*ny)):
+    for x in range(int(0.4*nx), int(0.6*nx)):
+        for y in range(int(0.7*ny)):
             cnv._cells[x][y].d = 1.0
             cnv._cells[x][y].material = 1
 
     # ignition source
     for x in range(int(nx/2)-2, int(nx/2)+2):
-        for y in range(int(0.8*ny),int(0.82*ny)):
-            cnv._cells[x][y].T = 160
+        for y in range(int(0.66*ny),int(0.7*ny)):
+            cnv._cells[x][y].T = 460
 
     while True:
         # calculating time step
@@ -211,9 +218,12 @@ def renderer():
         t_last = t
 
         # walls
-        for y in range(ny):
-            cnv._cells[0][y].T = 0
-            cnv._cells[nx-1][y].T = 0
+        for cell in cnv.cells:
+            if cell.is_boundary():
+                cell.T = 0
+                cell.d = 0
+                cell.edge(Edge.BOTTOM).v = 0
+                cell.edge(Edge.LEFT).v = 0
 
         # running the simulation
         cnv = fluid_simulation(dt, cnv)
@@ -224,7 +234,7 @@ def renderer():
             for y in range(ny):
                 data[-y-1, x, 2] = min(max(cnv._cells[x][y].d * (cnv._cells[x][y].T/50), 0.0), 1)
                 data[-y-1, x, 1] = min(max(cnv._cells[x][y].d, 0.0), 1)
-                data[-y-1, x, 0] = min(max(cnv._cells[x][y].T / 100, 0.0), 1)
+                data[-y-1, x, 0] = min(max(cnv._cells[x][y].T / 150, 0.0), 1)
             
         #data = np.divide(data, max(np.amax(data), 0.1))
         data = np.multiply(data, 255)
